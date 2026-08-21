@@ -1,0 +1,11 @@
+interface:
+  display_name: Network Slow Diagnosis
+  short_description: Diagnose why web pages load slowly or intermittently on Windows (WiFi/Ethernet), read-only layered diagnosis
+  default_prompt: Use $network-slow-diagnosis to diagnose why web pages load slowly or intermittently on Windows (WiFi/Ethernet) — layered read-only diagnosis from physical link to DNS to transport to app.
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true
