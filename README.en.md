@@ -78,6 +78,12 @@ network-slow-diagnosis/
 
 ## 📥 Download / Install
 
+> ✨ **One-liner install into your AI agent**: paste this to your AI assistant and it will install itself:
+>
+> ```text
+> Please install the network-slow-diagnosis Skill: clone https://github.com/hyt315/network-slow-diagnosis into your skills directory (Claude Code: ~/.claude/skills/network-slow-diagnosis/; Cursor: ~/.cursor/skills/; Codex/ChatGPT: .agent/skills/ in your project), and verify that SKILL.md, references/, and tests/ are all present. Whenever I report "web pages load slowly / intermittent stalling / the network feels slow", follow the SKILL.md Workflow and diagnose layer by layer with read-only commands.
+> ```
+
 Drop the skill directory into your agent's skills folder:
 
 | Platform | Path |

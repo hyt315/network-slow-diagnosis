@@ -78,6 +78,12 @@ network-slow-diagnosis/
 
 ## 📥 下载 / 安装
 
+> ✨ **一句话装进 AI Agent**：把下面这段话直接发给你的 AI 助手，它会自动完成安装——
+>
+> ```text
+> 请安装 network-slow-diagnosis Skill：把 https://github.com/hyt315/network-slow-diagnosis 克隆到你的 skills 目录（Claude Code：~/.claude/skills/network-slow-diagnosis/；Cursor：~/.cursor/skills/；Codex/ChatGPT：项目内 .agent/skills/），并确认 SKILL.md、references/、tests/ 都在。以后我报告「网页打开很慢 / 间歇性卡顿 / 网络感觉慢」时，按 SKILL.md 的 Workflow 用只读命令分层诊断。
+> ```
+
 支持主流 Agent 平台，把技能目录放到对应 skills 文件夹即可：
 
 | 平台 | 安装路径 |
