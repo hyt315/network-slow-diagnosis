@@ -71,5 +71,5 @@ metadata:
 
 ## Reference Map
 
-- [分层诊断手册](references/diagnostic-playbook.md)：每层精确命令、确凿判定标准、权威文档与开源工具清单、常见误区。
-- [DNS 根因实战案例](references/dns-root-cause-case.md)：一次真实「间歇性 11 秒卡顿」的完整排查与修复记录（含前后证据）。
+- 需要按层执行诊断、查判定标准或工具清单时，读 [分层诊断手册](references/diagnostic-playbook.md)：每层精确命令、确凿判定标准、权威文档与开源工具清单、常见误区。
+- 需要用真实案例对照方法论、或向用户证明"证据说话"时，读 [DNS 根因实战案例](references/dns-root-cause-case.md)：一次真实「间歇性 11 秒卡顿」的完整排查与修复记录（含前后证据）。

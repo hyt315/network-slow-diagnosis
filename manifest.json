@@ -1,8 +1,8 @@
 {
   "name": "network-slow-diagnosis",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "owner": "hyt315",
-  "updated_at": "2026-08-21",
+  "updated_at": "2026-08-22",
   "status": "active",
   "maturity_tier": "production",
   "review_due": "2026-11-20",

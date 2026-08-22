@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.1] - 2026-08-22
+
+### Changed
+
+- SKILL.md 的 Reference Map 升级为条件触发式读取引导（"需要按层执行诊断时读 playbook / 需要真实案例对照时读 case"），修复 LK005 弱引用（references 按需加载，措辞决定执行 AI 是否真的去读）——skill-doctor v1.2.1 检出。
+
 ## [1.0.0] - 2026-08-21
 
 ### Added
