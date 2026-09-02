@@ -88,15 +88,18 @@ if REFS_DIR.exists():
     orphans = actual - linked
     check(not orphans, f"orphan references (not linked in SKILL.md): {sorted(orphans)}")
 
-# 3b. Regression guards for diagnosis-coverage optimizations (locked after 2026-08-21 web review)
+# 3b. Regression guards for diagnosis-coverage optimizations (locked after 2026-08-21 web review & v1.1.0 update)
 layer_checks = {
     "time_appconnect": "SKILL.md missing TLS handshake timing (time_appconnect)",
     "Get-NetAdapterStatistics": "SKILL.md missing NIC error/discard counters (Get-NetAdapterStatistics)",
     "Get-NetTCPSetting": "SKILL.md missing TCP global params (Get-NetTCPSetting)",
     "Get-NetRoute": "SKILL.md missing default-route/multi-NIC check (Get-NetRoute)",
-    "安全 DNS": "SKILL.md missing browser DoH bypass note",
+    "Get-NetAdapterPowerManagement": "SKILL.md missing power management check (Get-NetAdapterPowerManagement)",
+    "Get-DnsClientDohServerAddress": "SKILL.md missing DoH check (Get-DnsClientDohServerAddress)",
+    "Get-DeliveryOptimizationStatus": "SKILL.md missing Delivery Optimization status check",
     "QUIC": "SKILL.md missing HTTP/3 QUIC note",
     "传递优化": "SKILL.md missing Windows 11 background-bandwidth pit",
+    "modern-network-pitfalls.md": "SKILL.md missing modern-network-pitfalls reference link",
 }
 for token, msg in layer_checks.items():
     check(token in text, msg)

@@ -1,12 +1,7 @@
 {
   "name": "network-slow-diagnosis",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "owner": "hyt315",
-  "updated_at": "2026-08-22",
-  "status": "active",
-  "maturity_tier": "production",
-  "review_due": "2026-11-20",
-  "review_cadence": "quarterly",
-  "target_platforms": ["generic", "vscode", "claude", "openai"],
-  "factory_components": ["references"]
+  "updated_at": "2026-09-02",
+  "description": "Layered read-only Windows network slowness & intermittent lag diagnosis (WiFi 7, Modern Standby, DoH, IPv6, Bufferbloat, DNS)"
 }
