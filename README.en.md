@@ -1,18 +1,18 @@
+# 🌐 Windows Network Slowness Diagnosis / network-slow-diagnosis
+
 <div align="center">
 
-# 🌐 Windows Network Slowness Diagnosis Skill (`network-slow-diagnosis`)
+**Layered, read-only Windows network slowness diagnosis — pinpoint root cause from physical link to DNS to app with hard evidence.**
 
-**Diagnose why web pages load slowly, intermittently lag, or stall on Windows.**  
-**Read-only queries · Millisecond-level evidence · Deep coverage for Windows 11 (24H2) / Wi-Fi 7 / DoH / IPv6 · Zero external dependencies.**
-
-**[简体中文](./README.md) · English**
+**分层只读排查 Windows 网页加载慢、间歇性卡顿与首屏转圈，用确凿毫秒级证据说话。**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/hyt315/network-slow-diagnosis?sort=semver)](https://github.com/hyt315/network-slow-diagnosis/releases)
+[![Release](https://img.shields.io/github/v/release/hyt315/network-slow-diagnosis?sort=semver)](CHANGELOG.md)
 [![Agent Skills](https://img.shields.io/badge/Agent%20Skills-compatible-1f6feb)](SKILL.md)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20%7C%2024H2-lightgrey)](SKILL.md)
-[![Dependencies](https://img.shields.io/badge/Dependencies-Zero%20(Pure%20PowerShell%20%2B%20Python)-brightgreen)](SKILL.md)
-[![Stars](https://img.shields.io/github/stars/hyt315/network-slow-diagnosis?style=social)](https://github.com/hyt315/network-slow-diagnosis/stargazers)
+[![GitHub Stars](https://img.shields.io/github/stars/hyt315/network-slow-diagnosis?style=social)](https://github.com/hyt315/network-slow-diagnosis/stargazers)
+
+[English](./README.en.md) | [中文](./README.md)
 
 </div>
 
@@ -23,72 +23,54 @@
 Windows users frequently encounter frustrating, elusive network bottlenecks:
 - "The router is right beside me and pinging the gateway takes 1ms, yet every time I click a new page in my browser, **the first 3 seconds always freeze and spin**."
 - "Chat apps work instantly, but opening heavy web pages stalls for dozens of seconds or errors out with connection timeout."
-- "Whenever a PC starts up in the house, gaming latency for all devices skyrockets from 10ms to 1500ms."
+- "Whenever a PC starts up or updates in the house, gaming latency for all devices skyrockets from 10ms to 1500ms."
 
-**`network-slow-diagnosis`** is a professional-grade Windows network diagnostic skill built for AI Agents and system engineers. It replaces vague guesses with **layered, bottom-up, read-only measurements and hard millisecond-level evidence**, directly pinpointing modern network pain points in Windows 11 24H2, Wi-Fi 7, Modern Standby power saving, DoH timeout fallback, IPv6 stalls, and Delivery Optimization Bufferbloat.
+**`network-slow-diagnosis`** is a professional-grade Windows network diagnostic skill built for AI Agents and system engineers. It replaces vague guesses with **layered, bottom-up, read-only measurements and hard millisecond-level evidence**, directly pinpointing modern network pain points in Windows 11 24H2, Wi-Fi 7, Band Steering roaming jitter, Modern Standby power saving, DoH timeout fallback, IPv6 stalls, and Delivery Optimization Bufferbloat.
 
 ---
 
-## ✨ Core Features Matrix
+## ✨ Key Features
 
 | Diagnostic Layer | Scenarios Covered | Core Read-Only Cmdlets / Tools | Definitive Criteria |
 |---|---|---|---|
-| **Physical & Wireless** | Wi-Fi 7/6/5 signal, Band Steering roaming jitter, channel congestion, packet errors | `netsh wlan show interfaces`<br>`netsh wlan show networks mode=bssid`<br>`Get-NetAdapterStatistics` | Signal `<60%` or frequent re-associations across BSSIDs under same SSID; incrementing error counters |
-| **Hardware Power & PPM** | Modern Standby (S0ix) D3 throttling, cold-start latency, EEE energy saving | `Get-NetAdapterPowerManagement`<br>`Get-NetAdapterAdvancedProperty` | `AllowComputerToTurnOffDevice = Enabled`, hardware clock recovery latency |
-| **Domain Resolution (DNS/DoH)** | Windows 11 native DoH handshake timeout fallback, cold cache misses, router DNS flakiness | `Get-DnsClientDohServerAddress`<br>`netsh dns show encryption`<br>`Resolve-DnsName -Server` | System configured unreachable DoH template causing TLS timeout before falling back to UDP 53; `nl` near `tt` |
-| **Transport & Dual Stack** | IPv6 fallback stall (Happy Eyeballs 21s timeout), PPPoE MTU 1492 black hole, TCP window autotuning | `netsh interface ipv6 show prefixpolicies`<br>`netsh interface ipv6 show subinterfaces`<br>`Test-NetConnection -Port 443` | IPv4 connects in `<30ms` while IPv6 fails/drops packets; `AutoTuningLevelEffective = Disabled` |
-| **System Background Hogs** | Windows Delivery Optimization (DoSvc) P2P upstream saturation, Bufferbloat | `Get-DeliveryOptimizationStatus -PeerInfo`<br>`Get-DeliveryOptimizationPerfSnap`<br>`Get-NetTCPConnection` | High `TotalBytesUploadedToInternet`, upstream bandwidth saturated delaying downstream ACK packets |
-| **Application & TLS Handshake** | TLS certificate chain negotiation delay, HTTP/3 QUIC fallback, remote server TTFB | `curl -w "ct=%{time_connect} ac=%{time_appconnect}..."`<br>`chrome://net-internals/#quic` | High `ac - ct` (TLS handshake bottleneck); local health verified but high `ttfb` (remote bottleneck) |
-
----
-
-## 📊 Layered Diagnostic Architecture
-
-```
-[User reports: Web pages intermittently slow / lagging]
-                          │
-         [Layer 0: Scope & IP Configuration]
-         Get-NetIPConfiguration (Rule out 169.254.x.x DHCP failure)
-                          │
-         [Layer 1: Physical Link & Wireless Band]
-         ping gateway (<5ms?) ──(Abnormal)──> Weak WiFi / Band Steering Jitter / Bad Cable
-                          │ (Normal)
-         [Layer 2: Hardware Power & PPM Throttling]
-         Get-NetAdapterPowerManagement ──(Enabled)──> Modern Standby D3 Wake Delay
-                          │ (Ruled Out)
-         [Layer 3: DNS & Windows 11 DoH Encryption]
-         curl time_namelookup / DoH Audit ──(Slow)──> DoH Handshake Timeout Fallback
-                          │ (Normal)
-         [Layer 4: Transport Handshake & IPv6 Dual Stack]
-         IPv4 vs IPv6 Latency / MTU ──(Stalled)──> IPv6 Fake-Pass / PMTU Black Hole
-                          │ (Normal)
-         [Layer 5: Background Bandwidth & Bufferbloat]
-         Get-DeliveryOptimizationStatus ──(Saturated)──> DoSvc P2P Upstream Hog (Bufferbloat)
-                          │ (Normal)
-         [Layer 6: Application TLS & Remote TTFB]
-         time_appconnect vs TTFB ──> Isolated to Remote Server / CDN Latency
-```
+| **Layer 1: Physical & Wireless** | Wi-Fi 7/6/5 signal, Band Steering roaming jitter, channel congestion, packet errors | `netsh wlan show interfaces`<br>`netsh wlan show networks mode=bssid`<br>`Get-NetAdapterStatistics` | Signal `<60%` or frequent re-associations across BSSIDs under same SSID; incrementing error counters |
+| **Layer 2: Hardware Power Management** | Modern Standby (S0ix) D3 throttling, cold-start latency, EEE energy saving | `Get-NetAdapterPowerManagement`<br>`Get-NetAdapterAdvancedProperty` | `AllowComputerToTurnOffDevice = Enabled`, hardware clock recovery latency |
+| **Layer 3: Domain Resolution (DNS/DoH)** | Windows 11 native DoH handshake timeout fallback, cold cache misses, router DNS flakiness | `Get-DnsClientDohServerAddress`<br>`netsh dns show encryption`<br>`Resolve-DnsName -Server` | System configured unreachable DoH template causing TLS timeout before falling back to UDP 53; `nl` (DNS lookup time) near total time |
+| **Layer 4: Transport & Dual Stack** | IPv6 fallback stall (Happy Eyeballs 21s timeout), PPPoE MTU 1492 black hole, TCP window autotuning | `netsh interface ipv6 show prefixpolicies`<br>`netsh interface ipv6 show subinterfaces`<br>`Test-NetConnection -Port 443` | IPv4 connects in `<30ms` while IPv6 fails/drops packets; `AutoTuningLevelEffective = Disabled` |
+| **Layer 5: System Background Hogs** | Windows Delivery Optimization (DoSvc) P2P upstream saturation, Bufferbloat | `Get-DeliveryOptimizationStatus -PeerInfo`<br>`Get-DeliveryOptimizationPerfSnap`<br>`Get-NetTCPConnection` | High `TotalBytesUploadedToInternet`, upstream bandwidth saturated delaying downstream ACK packets |
+| **Layer 6: Application & TLS Handshake** | TLS certificate chain negotiation delay, HTTP/3 QUIC fallback, remote server TTFB | `curl -w "ct=%{time_connect} ac=%{time_appconnect}..."`<br>`chrome://net-internals/#quic` | High `ac - ct` (TLS handshake bottleneck); local health verified but high `ttfb` (remote bottleneck) |
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. One-Sentence Auto-Install for AI Agents (Recommended)
+This is an AI Agent Skill — install it into your AI assistant and you're ready.
 
-Copy and send this prompt to your AI Assistant (Claude Code / Cursor / Codex / Antigravity):
+### Option A: Paste one sentence into any Agent (recommended, most universal)
 
-> **"Please install the network-slow-diagnosis skill: Clone https://github.com/hyt315/network-slow-diagnosis.git into your skills directory (e.g., `~/.claude/skills/network-slow-diagnosis` or `~/.agents/skills/network-slow-diagnosis`) and confirm installation."**
+Send this to your AI assistant and it will detect the platform and clone to the right skills directory:
 
-### 2. Multi-Platform Manual Installation
+> Please install the network-slow-diagnosis skill: clone `https://github.com/hyt315/network-slow-diagnosis` into your skills directory (e.g. `~/.claude/skills/network-slow-diagnosis` or `~/.agents/skills/network-slow-diagnosis`) and confirm it works.
 
-| Platform | Recommended Command |
+> 💡 **Works with smaller models too**: once installed, just say "diagnose why my network is slow" or "why are web pages loading slowly" to trigger the layered diagnostic workflow.
+
+### Option B: GitHub CLI 2.90+ (one command)
+
+```bash
+gh skill install hyt315/network-slow-diagnosis network-slow-diagnosis --agent claude-code --scope user
+# swap claude-code for codex / cursor / github-copilot, etc.
+```
+
+### Option C: Manual per-platform install
+
+| Platform | Command |
 |---|---|
 | **Claude Code** | `git clone https://github.com/hyt315/network-slow-diagnosis.git ~/.claude/skills/network-slow-diagnosis` |
-| **Cursor / Codex** | `git clone https://github.com/hyt315/network-slow-diagnosis.git ~/.cursor/skills/network-slow-diagnosis` |
-| **Antigravity / Local** | `git clone https://github.com/hyt315/network-slow-diagnosis.git D:\skills
-etwork-slow-diagnosis` |
+| **Codex** | `git clone https://github.com/hyt315/network-slow-diagnosis.git ~/.codex/skills/network-slow-diagnosis` |
+| **Cursor** | `git clone https://github.com/hyt315/network-slow-diagnosis.git ~/.cursor/skills/network-slow-diagnosis` |
+| **General Agents Directory** | `git clone https://github.com/hyt315/network-slow-diagnosis.git ~/.agents/skills/network-slow-diagnosis` |
 
-### 3. Run Self-Test Suite
+### Option D: Run local regression selftest
 
 ```powershell
 python scripts/selftest.py
@@ -96,7 +78,66 @@ python scripts/selftest.py
 
 ---
 
-## 🎯 Modern Network Top 6 Pitfalls Quick Reference
+## 🔒 Safety & Privacy Principles
+
+- **Read-Only First (Zero Mutation)**: All diagnostics use native PowerShell/CMD read-only queries. Never alters registry or silently resets network without permission.
+- **Evidence-Based**: Quantitative latency and packet drop measurements for every conclusion.
+- **Zero Dependencies**: Pure native Windows commands + Python 3 standard library.
+- **Strict Scope**: **Explicitly excludes** all proxy/VPN/tunnel topics to focus entirely on direct Windows network stack health.
+
+---
+
+## 📥 Download
+
+| Method | Command / Link |
+|---|---|
+| **HTTPS** | `git clone https://github.com/hyt315/network-slow-diagnosis.git` |
+| **SSH** | `git clone git@github.com:hyt315/network-slow-diagnosis.git` |
+| **GitHub CLI** | `gh repo clone hyt315/network-slow-diagnosis` |
+| **ZIP** | [Download ZIP](https://github.com/hyt315/network-slow-diagnosis/archive/refs/heads/main.zip) |
+| **Tarball** | [Download Tar](https://github.com/hyt315/network-slow-diagnosis/archive/refs/heads/main.tar.gz) |
+| **Single file (SKILL.md)** | `curl -O https://raw.githubusercontent.com/hyt315/network-slow-diagnosis/main/SKILL.md` |
+
+---
+
+## 💡 Core Philosophy
+
+- **Bottom-Up**: Physical link → Hardware power → DNS/DoH → Transport dual stack → Application response → System background.
+- **Slow Event Capture**: Use `curl -w` and `Measure-Command` to capture cold query latencies and handshake timings.
+- **Distinguish Disconnected vs. Slow**: If IPv4 is `169.254.x.x`, it's a DHCP failure, not a slow network.
+- **Approval-Gated Remediation**: Diagnoses and provides recommendations, but requires explicit user approval before applying changes.
+
+---
+
+## 📁 File Structure
+
+```
+network-slow-diagnosis/
+├── SKILL.md                          # Core skill definition and layered workflow
+├── README.md                         # Chinese documentation
+├── README.en.md                      # English documentation
+├── CHANGELOG.md                      # Version history
+├── LICENSE                           # MIT License
+├── .gitignore                        # Git ignore rules
+├── CONTRIBUTING.md                   # Contribution guide
+├── CODE_OF_CONDUCT.md                # Code of conduct
+├── SECURITY.md                       # Security policy
+├── Makefile                          # Test target
+├── manifest.json                     # Skill manifest
+├── agents/                           # Agent platform metadata
+├── scripts/
+│   └── selftest.py                   # Skill regression test runner
+├── tests/
+│   └── test_skill.py                 # Structure and assertion test suite
+└── references/                       # In-depth technical guides
+    ├── diagnostic-playbook.md        # Layered playbook and criteria
+    ├── modern-network-pitfalls.md    # Modern Windows network pitfalls guide
+    └── dns-root-cause-case.md        # Real-world 11-second DNS stall case study
+```
+
+---
+
+## 📚 Real-World Quick Reference
 
 | Typical Symptom | Root Cause Category | Key Diagnostic Cmdlet | Official Remediation |
 |---|---|---|---|
@@ -109,25 +150,29 @@ python scripts/selftest.py
 
 ---
 
-## 🛡️ Core Safety Principles
+## ❓ FAQ
 
-1. **Read-Only First (Zero Mutation)**: All diagnostics use native PowerShell/CMD read-only queries. Never alters registry or silently resets network without permission.
-2. **Evidence-Based**: Quantitative latency and packet drop measurements for every conclusion.
-3. **Zero Dependencies**: Pure native Windows commands + Python 3 standard library.
-4. **Strict Scope**: **Explicitly excludes** all proxy/VPN/tunnel topics to focus entirely on direct Windows network stack health.
+- **Q: Can I run this without Administrator privileges?**  
+  A: Yes. All diagnostic commands are read-only queries. `ping`, `curl`, `Resolve-DnsName`, `Get-Net*`, and `netsh` query commands work directly under standard user accounts.
+- **Q: Why are proxy and VPN topics excluded?**  
+  A: Proxies and VPN tunnels alter the native routing topology. This skill specifically focuses on Windows native network stack and direct link bottlenecks.
+- **Q: Will the diagnosis interrupt my active connections?**  
+  A: Absolutely not. The skill adheres strictly to the Zero-Mutation principle, never resetting adapters, flushing DNS, or modifying network configs without consent.
 
 ---
 
-## 📖 In-Depth Technical References
+## 🤝 Contributing
 
-| Reference Guide | Core Focus | When to Read |
-|---|---|---|
-| 📑 [**Diagnostic Playbook (`diagnostic-playbook.md`)**](references/diagnostic-playbook.md) | Layer 0~5 step-by-step commands, criteria, tools, and myths | When running end-to-end diagnosis or verifying threshold values |
-| 💡 [**Modern Network Pitfalls (`modern-network-pitfalls.md`)**](references/modern-network-pitfalls.md) | Deep analysis of Wi-Fi 7, Modern Standby, DoH, IPv6, and Bufferbloat | When encountering elusive roaming stalls or handshake timeouts |
-| 🔍 [**DNS Root Cause Real Case (`dns-root-cause-case.md`)**](references/dns-root-cause-case.md) | Full evidence chain of a real-world 11-second DNS stall investigation | When reviewing evidence-based diagnostic methodology |
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md). If this skill helped you, please give it a [Star ⭐](https://github.com/hyt315/network-slow-diagnosis/stargazers)!
 
 ---
 
 ## 📄 License
 
 Licensed under the [MIT License](LICENSE).
+
+See [CHANGELOG.md](CHANGELOG.md) for version history.
+
+---
+
+> 🌏 **中文版: [README.md](./README.md)**
