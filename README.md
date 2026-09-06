@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.svg" alt="Network Slow Diagnosis Banner" width="100%" />
+</p>
+
 # 🌐 Windows 网络变慢排查 / Network Slow Diagnosis
 
 <div align="center">

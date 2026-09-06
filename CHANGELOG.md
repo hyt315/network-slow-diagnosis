@@ -4,6 +4,12 @@ All notable changes to `network-slow-diagnosis` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-09-06
+
+### Added
+- **高清矢量横幅与视觉门面（Hero Banner）**：新增 `assets/banner.svg` 高清暗色系矢量封面，集成网络示波器 RTT 毫秒波形、Wi-Fi 7 / 雷达拓扑节点网格与 L0~L5 只读排查特性徽章，全面提升开源仓库门面质感。
+- **README 布局优化**：中英文主说明文档引入居中高清横幅与规范排版，提升阅读与引导体验。
+
 ## [1.3.0] - 2026-09-06
 
 ### Added
