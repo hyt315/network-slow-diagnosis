@@ -82,6 +82,7 @@ metadata:
   - 双栈分别测速：`Test-NetConnection -ComputerName <IPv4_IP> -Port 443` 与 `Test-NetConnection -ComputerName <IPv6_IP> -Port 443`。若 IPv4 秒通而 IPv6 卡死 → IPv6 假通阻塞。
 - MTU/分片：`ping -f -l 1472 目标` 失败、`-l 1400` 成功 → 分片异常。
 - TCP 栈全局参数：`netsh int tcp show global` + `Get-NetTCPSetting | Select-Object AutoTuningLevelEffective, CongestionProvider, ECN`。
+- 双栈与 MTU 深入核验：👉 动作：读取 `references/network-slow-diagnosis-pitfalls.md#三-底层协议-rfc-与权威参数基线`，核对 RFC 8305 Happy Eyeballs 超时、Path MTU 分片与 TCP 接收窗口参数。
 - 默认路由/多网卡错走与虚拟网卡冲突：
   `Get-NetRoute -DestinationPrefix "0.0.0.0/0" | Sort-Object RouteMetric` 与 `Get-NetIPInterface | Select-Object InterfaceAlias, InterfaceMetric`；若默认路由指向虚拟网卡（VMware/WSL/TAP）或插着网线却优先走 WiFi，会导致速度骤降。
 
@@ -129,4 +130,5 @@ metadata:
 
 - 需要按层执行完整诊断流程、查 24 类常见根因与判定标准或工具清单时，先读 [分层诊断手册](references/diagnostic-playbook.md)：每层精确命令、确凿判定标准、权威文档与开源工具清单、经典误区与安全恢复指南。
 - 需要深入排查 Wi-Fi 7、网卡节能休眠、DoH 降级超时、IPv6 假通、NDIS 过滤驱动丢包、TIME_WAIT 端口耗尽、死挂代理残余、Bufferbloat 等现代深水区问题时，先读 [现代 Windows 网络深水区避坑与官方排障指南](references/modern-network-pitfalls.md)：14 大现代网络陷阱技术根因、只读审计命令与针对性治理对策。
+- 需要对标 GitHub 同类排查技能、开源工具经验、RFC 协议标准（如 Happy Eyeballs / MTU 黑洞）与生产级踩坑时，先读 [深水区多源对标与避坑指南](references/network-slow-diagnosis-pitfalls.md)：涵盖分层路由最佳实践、TCP 探针禁 Ping 回退与深水故障排查。
 - 需要用真实案例对照方法论、或向用户证明"证据说话"时，先读 [DNS 根因实战案例](references/dns-root-cause-case.md)：一次真实「间歇性 11 秒卡顿」的完整排查与修复记录（含前后证据）。

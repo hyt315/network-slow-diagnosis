@@ -4,6 +4,18 @@ All notable changes to `network-slow-diagnosis` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-09-06
+
+### Added
+- **四维深水区对标避坑库与官方协议基线 (`references/network-slow-diagnosis-pitfalls.md`)**：
+  - 深度对标 GitHub 同类 Agent 技能标杆（`alibabacloud-ecs-windows-troubleshooting`、`wireshark-analysis`）的分层路由与数据脱敏范式；
+  - 融合 GitHub 顶级开源项目（`bp2008/pingtracer`、`diqezit/Ping`）的抖动识别与 ICMP 禁 Ping 时 TCP SYN 探针回退机制；
+  - 对齐 IETF 官方 RFC 8305 (Happy Eyeballs v2 双栈回退延迟)、RFC 1191 (PMTUD 分片黑洞) 与微软 Windows TCP Window Auto-Tuning 官方内核基线；
+  - 沉淀虚拟网卡跃点抢占、WiFi 2.4GHz 微波拥塞与代理 Loopback 断流等生产级杀手故障库。
+- **工作流就近动作指令升级 (`SKILL.md`)**：
+  - 在传输层与双栈排查步骤中内联动作指令，实现向深水区避坑库的精准直达；
+  - `Reference Map` 资产索引树全面升级，消灭孤儿文件隐患。
+
 ## [1.3.1] - 2026-09-06
 
 ### Added
