@@ -34,12 +34,12 @@
 | 诊断层级 | 覆盖场景 | 核心只读命令 / 工具 | 确凿判定依据 |
 |---|---|---|---|
 | **一键诊断扫描器** | L0~L5 全层自动化毫秒级测绘，输出标准事实卡片 | `powershell -File scripts/diagnose.ps1` | 5~10 秒全自动出具各层指标、基线比对与确凿归因 |
-| **第 1 层：物理与无线链路** | Wi-Fi 7/6/5 信号强度、双频合一漫游颠簸、信道拥塞、网卡硬件错包丢包 | `netsh wlan show interfaces`<br>`netsh wlan show networks mode=bssid`<br>`netstat -e` | 信号 `<60%` 或相同 SSID 下多 BSSID 频繁重关联；错包/丢包计数持续递增 |
+| **第 1 层：物理与无线链路** | Wi-Fi 7/6/5 信号强度、双频合一漫游颠簸、同频 AP 拥塞、NDIS 第三方过滤驱动、硬件错包丢包 | `netsh wlan show interfaces`<br>`netsh wlan show networks mode=bssid`<br>`Get-NetAdapterBinding`<br>`netstat -e` | 信号 `<60%` 或同信道 >3 个高信号 AP；网卡绑定非微软第三方过滤驱动；错包计数递增 |
 | **第 2 层：硬件节能调度** | Modern Standby (S0ix) D3 挂起、静置后首开网页迟滞、EEE 节能 | `Get-NetAdapterPowerManagement`<br>`Get-NetAdapterAdvancedProperty` | `AllowComputerToTurnOffDevice = Enabled`，硬件时钟唤醒延迟 |
-| **第 3 层：DNS 与 DoH 解析** | Win11 原生 DoH 握手超时回退、冷查询慢、路由器转发器抽风 | `Get-DnsClientDohServerAddress`<br>`netsh dns show encryption`<br>`Resolve-DnsName -Server` | 系统启用了不可达 DoH 模板导致 TLS 握手超时后才降级 UDP 53；`nl`（DNS 耗时）接近总耗时 |
-| **第 4 层：传输层与双栈** | IPv6 假通 (Happy Eyeballs 21s 超时)、PPPoE MTU 1492 黑洞、TCP 窗口自适应 | `netsh interface ipv6 show prefixpolicies`<br>`netsh interface ipv6 show subinterfaces`<br>`Test-NetConnection -Port 443` | IPv4 秒连 (<30ms) 而 IPv6 握手失败/丢包；`AutoTuningLevelEffective = Disabled` |
-| **第 5 层：死挂代理与虚拟网卡** | 注册表死挂代理残余检测、虚拟网卡 (VMware/WSL) 优先级冲突 | `Get-ItemProperty ... "Internet Settings"`<br>`Get-NetRoute -DestinationPrefix "0.0.0.0/0"` | 注册表 `ProxyEnable=1` 但对应端口无响应；默认路由指向虚拟网卡导致流量绕路 |
-| **第 6 层：后台占用与膨胀** | Windows 传递优化 (DoSvc) P2P 上行吃满、Bufferbloat 缓冲区膨胀 | `Get-DeliveryOptimizationStatus -PeerInfo`<br>`Get-DeliveryOptimizationPerfSnap`<br>`Get-NetTCPConnection` | `TotalBytesUploadedToInternet` 巨大，上行占满导致下行 ACK 队列排队延迟雪崩 |
+| **第 3 层：DNS 与 DoH 解析** | Win11 原生 DoH 握手超时回退、DNS 搜索后缀列表级联超时、NRPT 规则失效、冷查询慢 | `Get-DnsClientGlobalSetting`<br>`Get-DnsClientDohServerAddress`<br>`Resolve-DnsName -Server` | `SuffixSearchList` 包含多个失效后缀；不可达 DoH 模板导致 TLS 超时回退；`nl` 接近总耗时 |
+| **第 4 层：传输层与双栈** | 临时端口耗尽与 TIME_WAIT 积压、IPv6 假通超时、PPPoE MTU 1492 黑洞、TCP 窗口自适应 | `(Get-NetTCPConnection -State TimeWait).Count`<br>`netsh interface ipv6 show prefixpolicies`<br>`Test-NetConnection -Port 443` | `TimeWait` 超过 3000~5000 导致 10055 异常；IPv4 秒通而 IPv6 卡死；`AutoTuningLevelEffective = Disabled` |
+| **第 5 层：死挂代理与 Hosts** | 注册表死挂代理残余检测、Hosts 文件硬编码失效旧 IP、虚拟网卡 (VMware/WSL) 优先级冲突 | `Get-ItemProperty ... "Internet Settings"`<br>`Get-Content ...\hosts`<br>`Get-NetRoute -DestinationPrefix "0.0.0.0/0"` | 注册表 `ProxyEnable=1` 但对应端口无响应；Hosts 静态绑定失效 IP；默认路由指向虚拟网卡 |
+| **第 6 层：后台占用与膨胀** | Windows 传递优化 (DoSvc) P2P 上行吃满、Bufferbloat 缓冲区膨胀 | `Get-DeliveryOptimizationStatus -PeerInfo`<br>`Get-DeliveryOptimizationPerfSnap`<br>`Get-NetTCPConnection` | `TotalBytesUploadedToInternet` 巨大；并发大吞吐时 Ping 延迟由 10ms 暴涨至 500ms+ |
 | **第 7 层：应用与 TLS 握手** | TLS 证书链协商延迟、HTTP/3 QUIC 握手回退、远端服务器 TTFB | `curl.exe -w "ct=%{time_connect} ac=%{time_appconnect}..."`<br>`chrome://net-internals/#quic` | `ac - ct` 极大（TLS 握手受阻）；本地健康但 `ttfb` 极大（远端服务器响应慢） |
 
 ---
@@ -148,7 +148,10 @@ network-slow-diagnosis/
 | 🔋 **静置一会儿后首次开网页必卡** | 网卡 Modern Standby D3 挂起 | `Get-NetAdapter -Physical \| Get-NetAdapterPowerManagement` | 设备管理器网卡属性电源管理中取消勾选“允许计算机关闭此设备以节约电源” |
 | 🔒 **局域网极快，但开新网页白屏 2 秒** | Windows 11 原生 DoH 超时降级 | `Get-DnsClientDohServerAddress`<br>`netsh dns show encryption` | 换用国内高速 DoH（阿里/腾讯）或将 DNS 加密切换为“仅未加密” |
 | 🌐 **即时通讯正常，部分网页转圈超时** | IPv6 假通 (Happy Eyeballs 21s 超时) | `netsh interface ipv6 show prefixpolicies`<br>`Test-NetConnection <IPv6> -Port 443` | 禁用故障 IPv6 或配置注册表 `DisabledComponents=0x20` 设置 IPv4 优先 |
-| 🚀 **全家网络暴卡，ping 网关飙到 1500ms** | 传递优化 DoSvc P2P 上行占满 | `Get-DeliveryOptimizationStatus -PeerInfo`<br>`Get-DeliveryOptimizationPerfSnap` | Windows 更新 -> 高级选项 -> 传递优化 -> 关闭“允许从其他电脑下载” |
+| 🧩 **千兆网卡协商正常，实际跑不满且微丢包** | 第三方 NDIS 过滤驱动内核排队 | `Get-NetAdapterBinding \| Where-Object { $_.ComponentID -notmatch '^(ms_\|vms_)' }` | 在网卡属性中取消勾选已卸载残留或过期的第三方抓包/杀软过滤驱动组件 |
+| ⚠️ **高并发下载或刷新突然全网卡死 10055** | 短连接泛滥与 TIME_WAIT 端口耗尽 | `(Get-NetTCPConnection -State TimeWait).Count`<br>`netsh int ipv4 show dynamicport tcp` | 关闭恶意刷短连接的后台进程；评估优化 `TcpTimedWaitDelay` 超时时间 |
+| 📝 **唯独某个特定网站打不开或死等超时** | Hosts 文件静态映射至失效旧 IP | `Get-Content "$env:windir\System32\drivers\etc\hosts"` | 管理员身份编辑 Hosts 文件，删除或注释掉失效的静态 IP 条目 |
+| 🚀 **全家网络暴卡，ping 网关飙到 1500ms** | 传递优化 DoSvc P2P 上行占满 / Bufferbloat | `Get-DeliveryOptimizationStatus -PeerInfo`<br>`Get-DeliveryOptimizationPerfSnap` | Windows 更新 -> 高级选项 -> 传递优化 -> 关闭“允许从其他电脑下载”；路由器开 SQM |
 | 🐢 **千兆宽带下载被锁死几百 KB/s** | TCP 接收窗口自适应被意外关闭 | `Get-NetTCPSetting \| Select AutoTuningLevelEffective` | 执行 `netsh int tcp set global autotuninglevel=normal` 恢复默认 |
 
 ---

@@ -1,6 +1,6 @@
 ---
 name: network-slow-diagnosis
-description: Diagnose why web pages load slowly or intermittently on Windows (WiFi/Ethernet). Use when a user reports web pages opening slowly, intermittent lag, stalls while a site loads, or "the network feels slow" without an obvious cause. Features dual-mode layered read-only diagnosis (one-click automated scanner scripts/diagnose.ps1 or step-by-step manual commands): physical/link (WiFi 7/6/5 signal, band steering jitter, gateway latency), NIC power management (Modern Standby D3 throttling), DNS resolution speed and DoH flakiness (Windows 11 DNS-over-HTTPS fallback, router DNS forwarder, cold-cache misses), IPv4 vs IPv6 fallback (Happy Eyeballs timeout, PMTU black hole), TCP connect/TLS timing, zombie proxy residual detection, virtual NIC conflicts, and background bandwidth hogs (Delivery Optimization DoSvc P2P upstream, Bufferbloat). Exclude all proxy/VPN/Clash configuration or tunnel topics — if the user asks to configure proxies or tunnels, do not handle it here; redirect the user elsewhere.
+description: Diagnose why web pages load slowly or intermittently on Windows (WiFi/Ethernet). Use when a user reports web pages opening slowly, intermittent lag, stalls, or "the network feels slow" without obvious cause. Features dual-mode layered read-only diagnosis (automated scripts/diagnose.ps1 or manual): physical link (WiFi signal/co-channel contention, NDIS 3rd-party filters, gateway latency), NIC power management (Modern Standby D3 throttling), DNS & DoH (suffix search list, forwarder jitter, cold cache), IPv4/IPv6 fallback (Happy Eyeballs timeout, PMTU black hole), TCP connect/TLS timing, TIME_WAIT socket backlog, zombie proxy residuals, hosts static overrides, and background hogs (DoSvc P2P upstream, Bufferbloat). Exclude all proxy/VPN/Clash configuration or tunnel topics — if the user asks to configure proxies or tunnels, do not handle it here; redirect the user elsewhere.
 metadata:
   author: hyt315
 ---
@@ -20,7 +20,7 @@ metadata:
 
 - 用户说「网页打开很慢 / 有时卡很久才出来 / 网络感觉慢」。
 - 打开某个或某类网站间歇性转圈、首屏慢。
-- 想排查是不是 Wi-Fi 7/双频合一漫游颠簸、网卡休眠节能、DNS/DoH 超时、IPv6 假通回退、死挂系统代理残余、后台上行占满导致变慢。
+- 想排查是不是 Wi-Fi 7/双频合一漫游颠簸与同频拥塞、NDIS 第三方过滤驱动丢包、网卡休眠节能、DNS 搜索后缀与 DoH 超时、IPv6 假通回退、TIME_WAIT 端口耗尽、死挂系统代理残余、Hosts 静态篡改、后台上行占满与 Bufferbloat 导致变慢。
 
 ## Workflow
 
@@ -47,8 +47,9 @@ metadata:
 ### 2. 物理 / 链路 / 硬件节能层（只读）
 
 - 网关延迟：`ping <网关IP> -n 4`，正常 <5ms；>30ms 或抖动大说明内网/WiFi 问题。
-- WiFi 与频段颠簸：`netsh wlan show interfaces` 看 Radio type（802.11be/ax/ac）、Band（2.4GHz/5GHz/6GHz）、Signal 与 Rx/Tx rate；`netsh wlan show networks mode=bssid` 审计周围同名 AP 信号差值（判断是否因双频合一反复漫游跳变）。
+- WiFi 物理状态与同频信道拥塞：`netsh wlan show interfaces` 看 Radio type、Band、Signal 与 Rx/Tx rate；`netsh wlan show networks mode=bssid` 审计同频邻近 AP 数量（>3 个高信号同频 AP 会因 CSMA/CA 空口争用引发跳 ping）。
 - 网卡节能休眠（首开卡顿元凶）：`Get-NetAdapter -Physical | Get-NetAdapterPowerManagement` 查看 `AllowComputerToTurnOffDevice` 是否开启；`Get-NetAdapterAdvancedProperty` 审计 `Energy Efficient Ethernet` (EEE) 与漫游主动性 `Roaming Aggressiveness`。
+- 第三方 NDIS 过滤驱动审计：`Get-NetAdapterBinding | Where-Object { $_.ComponentID -notmatch '^(ms_|vms_)' -and $_.Enabled -eq $true }`（检查是否有旧版抓包驱动、老旧杀软或虚拟机桥接组件在内核层引起排队迟滞或静默丢包）。
 - 网卡速率与状态：`Get-NetAdapter | Select-Object Name, LinkSpeed, Status`。
 - 网卡错包/丢包：`netstat -e` 查看累计 Errors 与 Discards；`Get-NetAdapterStatistics -Name <接口名>` 看实时统计。计数持续增长说明网线/端口/双工协商有问题。
 - 后台占带宽：`Get-NetTCPConnection | Group-Object State` 看连接数；`resmon` 网络选项卡看 Top 进程吞吐。
@@ -61,6 +62,7 @@ metadata:
   `curl.exe -4 --noproxy '*' -o NUL -s -w "nl=%{time_namelookup} ct=%{time_connect} st=%{time_starttransfer} tt=%{time_total}\n" https://域名`
   若 `nl`（DNS）接近 `tt` 且很大 → 100% 卡在 DNS。
 - 冷缓存对照：`Clear-DnsClientCache` 后首次解析明显慢于命中缓存 → 典型冷查询现象。
+- DNS 全局搜索后缀与 NRPT 审计：`Get-DnsClientGlobalSetting | Select-Object SuffixSearchList, UseDevolution`；`Get-DnsClientNrptRule`（多余的失效内网后缀会导致单次解析级联超时，延迟放大数倍）。
 - AAAA（IPv6）解析耗时对照：`Measure-Command { Resolve-DnsName 域名 -Type AAAA }` 相比 `-Type A` 明显更慢/超时 → 运营商 IPv6 路径异常。
 - **Windows 11 系统级 DoH 与浏览器安全 DNS**：
   - 系统层：`Get-DnsClientDohServerAddress` 与 `netsh dns show encryption` 审计是否启用了不可达的 DoH 模板（导致 TLS 超时后才慢速回退 UDP 53）；
@@ -72,6 +74,8 @@ metadata:
   `curl.exe -4 --noproxy '*' -o NUL -s -w "ct=%{time_connect} ac=%{time_appconnect} st=%{time_starttransfer} tt=%{time_total}\n" https://域名`
   `ac - ct` 即纯 TLS 握手时长（证书链校验 + 密钥协商）；若它很大 → 卡在 TLS，而非 TCP 或服务器。
 - TCP 建连：`curl.exe -4 --noproxy '*' -o NUL -s -w "ct=%{time_connect} st=%{time_starttransfer}\n" https://域名`；或 `Test-NetConnection 域名 -Port 443`。
+- 临时端口耗尽与 TIME_WAIT 积压：`netsh int ipv4 show dynamicport tcp` 查看动态端口配额；`(Get-NetTCPConnection -State TimeWait).Count` 检查积压套接字数量（积压过高会导致新建连接报 10055 异常）。
+- Bufferbloat 满载对比：并发大流量时 `ping 223.5.5.5 -n 10`，若 RTT 较空闲时膨胀数倍甚至数十倍，说明排队缓冲区过深。
 - IPv6 假通与双栈超时（Happy Eyeballs 21s 超时元凶）：
   - `netsh interface ipv6 show prefixpolicies`（查看是否 IPv6 优先）；
   - `netsh interface ipv6 show subinterfaces`（检查 IPv6 MTU / PPPoE 1492 黑洞）；
@@ -88,7 +92,10 @@ metadata:
 - **死挂系统代理残余检测（非代理设置指导，仅排查历史残留死端口）**：
   `Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" | Select-Object ProxyEnable, ProxyServer`
   若 `ProxyEnable = 1` 且目标端口无法建连，说明历史软件退出未清理注册表，导致所有直连流量持续等待死端口超时。提示用户在系统设置中关闭。
-- Windows 11 传递优化（DoSvc）与 Bufferbloat 缓冲区膨胀：
+- **Hosts 文件静态条目审计**：
+  `Get-Content -Path "$env:windir\System32\drivers\etc\hosts" -ErrorAction SilentlyContinue | Where-Object { $_ -match '\S' -and $_ -notmatch '^\s*#' }`
+  检查是否硬编码了失效、下线或异地的旧 IP 导致特定站点卡死。
+- Windows 11 传递优化（DoSvc）与后台上行占用：
   - `Get-DeliveryOptimizationStatus -PeerInfo` 与 `Get-DeliveryOptimizationPerfSnap`（检测后台 P2P 上行是否吃满宽带）；
   - `Get-NetTCPConnection -State Established | Group-Object OwningProcess` 找出建立大量活跃连接的后台进程；
   - `Get-NetConnectionProfile` 看是否为计量网络。
@@ -103,9 +110,13 @@ metadata:
 |---|---|---|---|:---:|
 | L0 范围界定 | 本机 IP / 网关 | 192.168.1.2 (以太网) | 非 169.254.x.x | 🟢 正常 |
 | L1 物理链路 | 网关延迟 / WiFi 信号 | 1.8ms / 95% (2.4GHz) | < 5ms / > 65% | 🟢 正常 |
+| L1 物理链路 | NDIS 过滤驱动 | Clean (MS Native) | Clean | 🟢 正常 |
 | L2 DNS 解析 | 当前 DNS vs 公共 DNS | 1250ms vs 15ms | < 50ms | 🔴 严重异常 (根因) |
+| L2 DNS 解析 | DNS 搜索后缀列表 | None | 0-1 Suffix | 🟢 正常 |
 | L3 传输层 | TCP 443 / TLS 握手 | 18ms / 25ms | < 100ms | 🟢 正常 |
+| L3 传输层 | TIME_WAIT 积压 | 45 sockets | < 500 sockets | 🟢 正常 |
 | L4 应用与代理 | 死挂系统代理残余 | Clean (Disabled) | Disabled | 🟢 正常 |
+| L4 应用与代理 | Hosts 静态映射 | Clean (Default) | Clean | 🟢 正常 |
 | L5 后台占用 | 传递优化 P2P 上行 | 0 MB (Idle) | < 100MB | 🟢 正常 |
 
 【确凿定位根因】...
@@ -116,6 +127,6 @@ metadata:
 
 ## Reference Map
 
-- 需要按层执行完整诊断流程、查判定标准或工具清单时，先读 [分层诊断手册](references/diagnostic-playbook.md)：每层精确命令、确凿判定标准、权威文档与开源工具清单、常见误区。
-- 需要深入排查 Wi-Fi 7、网卡节能休眠、DoH 降级超时、IPv6 假通、死挂代理残余、传递优化上行占满等现代深水区问题时，先读 [现代 Windows 网络深水区避坑与官方排障指南](references/modern-network-pitfalls.md)：8 大现代网络陷阱技术根因、只读审计命令与针对性治理对策。
+- 需要按层执行完整诊断流程、查 24 类常见根因与判定标准或工具清单时，先读 [分层诊断手册](references/diagnostic-playbook.md)：每层精确命令、确凿判定标准、权威文档与开源工具清单、经典误区与安全恢复指南。
+- 需要深入排查 Wi-Fi 7、网卡节能休眠、DoH 降级超时、IPv6 假通、NDIS 过滤驱动丢包、TIME_WAIT 端口耗尽、死挂代理残余、Bufferbloat 等现代深水区问题时，先读 [现代 Windows 网络深水区避坑与官方排障指南](references/modern-network-pitfalls.md)：14 大现代网络陷阱技术根因、只读审计命令与针对性治理对策。
 - 需要用真实案例对照方法论、或向用户证明"证据说话"时，先读 [DNS 根因实战案例](references/dns-root-cause-case.md)：一次真实「间歇性 11 秒卡顿」的完整排查与修复记录（含前后证据）。

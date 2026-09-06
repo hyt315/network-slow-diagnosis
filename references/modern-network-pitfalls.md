@@ -15,6 +15,12 @@
 6. [坑 6：TCP 窗口自适应关闭与网卡高级节能属性（EEE / RSS / LSO）](#坑-6tcp-窗口自适应关闭与网卡高级节能属性eee--rss--lso)
 7. [坑 7：第三方网络工具异常退出导致注册表死挂系统代理（Zombie Proxy Residual）](#坑-7第三方网络工具异常退出导致注册表死挂系统代理zombie-proxy-residual)
 8. [坑 8：多网卡与虚拟网卡（VMware/WSL/Hyper-V）默认路由冲突与 SMHNR 延迟](#坑-8多网卡与虚拟网卡vmwarewslhyper-v默认路由冲突与-smhnr-延迟)
+9. [坑 9：DNS 搜索后缀列表（SuffixSearchList）与 NRPT 规则放大解析延迟](#坑-9dns-搜索后缀列表suffixsearchlist与-nrpt-规则放大解析延迟)
+10. [坑 10：短连接泛滥导致临时端口（Ephemeral Ports）耗尽与 TIME_WAIT 积压](#坑-10短连接泛滥导致临时端口ephemeral-ports耗尽与-time_wait-积压)
+11. [坑 11：第三方 NDIS 轻量级过滤驱动（NDIS Filter Drivers）静默丢包与延迟注入](#坑-11第三方-ndis-轻量级过滤驱动ndis-filter-drivers静默丢包与延迟注入)
+12. [坑 12：Wi-Fi 同频信道干扰与邻近 AP 严重拥塞（信噪比与信道竞争）](#坑-12wi-fi-同频信道干扰与邻近-ap-严重拥塞信噪比与信道竞争)
+13. [坑 13：满载与空载延迟巨幅劣化（Bufferbloat 缓冲区膨胀与队列积压）](#坑-13满载与空载延迟巨幅劣化bufferbloat-缓冲区膨胀与队列积压)
+14. [坑 14：Hosts 文件静态条目篡改或失效 IP 长期固化（Stale Hosts Mapping）](#坑-14hosts-文件静态条目篡改或失效-ip-长期固化stale-hosts-mapping)
 
 ---
 
@@ -247,4 +253,176 @@ Get-NetIPInterface -AddressFamily IPv4 | Sort-Object InterfaceMetric | Select-Ob
 - **治理建议**：
   - 手动提高虚拟网卡的接口跃点数，确保物理网卡拥有更低的 Metric；
   - 禁用不使用的虚拟网卡或在控制面板网络连接中调整适配器绑定顺序。
+
+---
+
+## 坑 9：DNS 搜索后缀列表（SuffixSearchList）与 NRPT 规则放大解析延迟
+
+### 现象表现
+- 打开任意公网域名（如 `www.qq.com`）时，首次或冷查询耗时经常达到 2~5 秒以上，甚至间歇性超时白屏。
+- 但如果直接 `ping` 目标域名的公网 IP 地址，却能够秒回且延迟极低。
+- 本机此前曾加入过企业域（Active Directory）、连接过内网办公网络或使用过远程接入客户端。
+
+### 技术根因
+1. **搜索后缀级联查询（Suffix Search List Multiplication）**：Windows 网络栈在进行名称解析时，如果全局配置了 `SuffixSearchList`，或者启用了「主 DNS 后缀与连接特定后缀的逐级退化（Devolution）」，系统会在原域名的基础上依次拼接后缀（例如 `www.qq.com.corp.example.com`、`www.qq.com.internal.local`）向 DNS 服务器发送多轮查询。每一个不存在的内网后缀都需要等待本地 DNS 返回 NXDOMAIN 或超时（1~2 秒），导致单次解析耗时被成倍放大。
+2. **名称解析策略表（NRPT）失效挂载**：系统若残留有 DirectAccess 或企业安全策略下发的 NRPT 规则，特定命名空间的解析会被强制分流至早已不可达的私有企业 DNS 服务器，在经历长时间握手超时后才会降级回退。
+
+### 官方只读排查命令
+```powershell
+# 1. 检查全局 DNS 客户端设置与搜索后缀列表
+Get-DnsClientGlobalSetting | Select-Object SuffixSearchList, UseDevolution, DevolutionLevel
+
+# 2. 检查各网络适配器的连接特定后缀与动态注册设置
+Get-DnsClient | Select-Object InterfaceAlias, ConnectionSpecificSuffix, RegisterThisConnectionsAddress
+
+# 3. 检查是否有活动的 NRPT (Name Resolution Policy Table) 策略规则
+Get-DnsClientNrptRule -ErrorAction SilentlyContinue | Select-Object DnsSecValidationRequired, IPsecCARestriction, Name, Server
+```
+
+### 证据判定与处置
+- **证据**：`SuffixSearchList` 包含多个条目（尤其是已失效的企业内网域名），或 `Get-DnsClientNrptRule` 存在指向无效 IP 的规则；使用 `Resolve-DnsName` 测试时存在明显的连续超时停顿。
+- **治理建议**：
+  - 在「网络适配器属性」->「TCP/IPv4 属性」->「高级」->「DNS」中，将「附加这些 DNS 后缀」恢复为默认的「附加主 DNS 后缀和连接特定的 DNS 后缀」；
+  - 若不再处于企业域环境，清空注册表中残留的无效全局 `SearchList`。
+
+---
+
+## 坑 10：短连接泛滥导致临时端口（Ephemeral Ports）耗尽与 TIME_WAIT 积压
+
+### 现象表现
+- 在多标签页高并发浏览、后台下载或开发运行高频接口调用时，突然系统所有网络请求全面卡死。
+- 浏览器报错 `ERR_NETWORK_CHANGED` 或底层套接字报错 `WSAENOBUFS (10055 - 由于系统缓冲区空间不足或队列已满，不能执行套接字上的操作)`。
+- 静置等待 1~2 分钟后，网络无需任何操作又自动恢复畅通。
+
+### 技术根因
+TCP 协议规范（RFC 793）规定，主动关闭连接的一方必须在发送最后的 ACK 后进入 `TIME_WAIT` 状态，以确保远端能够收到该确认并防止旧连接的迷途分组干扰新连接。Windows 默认的 `TcpTimedWaitDelay` 为 120 秒（2 分钟）。
+Windows 默认动态临时端口（Ephemeral Ports）范围是 49152~65535（共 16384 个可用端口）。当短连接建立速率远高于 `TIME_WAIT` 释放速率时，四元组被迅速占满，本地网络栈无法分配出新的可用源端口，导致所有新建 TCP 连接瞬间失败或卡死挂起。
+
+### 官方只读排查命令
+```powershell
+# 1. 查看当前 TCP 动态端口范围配置
+netsh int ipv4 show dynamicport tcp
+
+# 2. 统计当前处于 TIME_WAIT 状态的套接字数量
+(Get-NetTCPConnection -State TimeWait -ErrorAction SilentlyContinue).Count
+
+# 3. 按连接状态分组统计当前系统所有 TCP 套接字分布
+Get-NetTCPConnection -ErrorAction SilentlyContinue | Group-Object State | Select-Object Count, Name
+```
+
+### 证据判定与处置
+- **证据**：处于 `TimeWait` 状态的连接数超过 3000~5000，或总动态端口占用率超过 50%；伴随新连接无法发起。
+- **治理建议**：
+  - 排查并关闭后台短时间内发起海量短连接的客户端程序（优先改用长连接 Keep-Alive 或连接池）；
+  - 经用户同意后，可在注册表中合理调优 `TcpTimedWaitDelay`（例如从 120 秒调整为 30 秒）。
+
+---
+
+## 坑 11：第三方 NDIS 轻量级过滤驱动（NDIS Filter Drivers）静默丢包与延迟注入
+
+### 现象表现
+- 本机网卡协商速率显示为 1000Mbps 或 2.5Gbps 全双工，网线与交换机完全正常。
+- 但实际测速始终被卡在几十兆，或网络传输中出现无规律的微秒级/毫秒级卡顿、小包持续丢包。
+- 常见于安装过第三方抓包工具、虚拟机网络组件、某些安全防护软件或虚拟网卡驱动的机器。
+
+### 技术根因
+Windows 网络架构中，物理网卡驱动之上通过 NDIS（Network Driver Interface Specification）链式挂载了多种过滤驱动（Lightweight Filter, LWF）。很多第三方软件（如旧版抓包驱动、杀毒软件网络防篡改模块、虚拟机桥接协议）会在物理网卡上插入自己的过滤组件。
+若这类第三方 NDIS 过滤驱动存在内存分配缓慢、内核锁竞争、与 Windows 11 核心隔离（HVCI）内存完整性不兼容等问题，每一个进出网卡的以太网数据帧都会被额外拦截检查与排队，从而注入严重的内部处理延迟甚至直接发生静默丢包。
+
+### 官方只读排查命令
+```powershell
+# 1. 审计当前活动网络适配器上绑定的所有非微软原生第三方过滤驱动与协议组件
+Get-NetAdapterBinding -ErrorAction SilentlyContinue | Where-Object { 
+    $_.ComponentID -notmatch '^(ms_|vms_)' -and $_.Enabled -eq $true 
+} | Select-Object Name, DisplayName, ComponentID, Enabled
+
+# 2. 检查特定网卡（如以太网）的所有绑定组件明细
+Get-NetAdapterBinding -Name "以太网" -ErrorAction SilentlyContinue | Select-Object DisplayName, ComponentID, Enabled
+```
+
+### 证据判定与处置
+- **证据**：`Enabled = True` 的列表中存在已废弃、已卸载残留或版本过旧的第三方 NDIS 组件（如旧版 `npcap`、历史虚拟机桥接驱动、第三方杀毒网络过滤驱动）。
+- **治理建议**：
+  - 在「网络连接」适配器属性界面中，取消勾选有嫌疑的非微软第三方过滤协议（如 VMware Bridge Protocol、Npcap Packet Driver 等）进行对照测试；
+  - 彻底卸载冲突或残留的第三方网络驱动程序。
+
+---
+
+## 坑 12：Wi-Fi 同频信道干扰与邻近 AP 严重拥塞（信噪比与信道竞争）
+
+### 现象表现
+- 笔记本 Wi-Fi 信号显示满格（95%~100%），网卡协商速率也较高。
+- 但在实际看视频、打游戏或开网页时，网络频繁出现周期性跳 ping，延迟从正常 5ms 瞬间飙升至 300ms~800ms，偶发丢包。
+
+### 技术根因
+Wi-Fi 信号强度（RSSI）仅代表本地网卡与路由器 AP 之间的无线发射功率，并不代表信道传输质量。
+Wi-Fi 采用 CSMA/CA（载波侦听多路访问/冲突避免）半双工空口机制。如果在同一信道或重叠信道上存在多个高强度的邻近 AP，当任意一台设备正在空中传输数据时，其他所有 AP 与终端都必须退避等待（Clear Channel Assessment - CCA 忙碌）。密集住宅区中，如果路由器信道配置为默认自动，容易与邻居家路由器扎堆在 2.4GHz 的信道 1/6/11 或 5GHz 的信道 36/149，从而造成严重的同频竞争与队列积压。
+
+### 官方只读排查命令
+```powershell
+# 1. 检查当前 Wi-Fi 接口的连接频段、物理信道与收发协商速率
+netsh wlan show interfaces
+
+# 2. 扫描周边所有可见无线网络的 SSID、BSSID、信道及信号强度分布
+netsh wlan show networks mode=bssid
+```
+
+### 证据判定与处置
+- **证据**：当前连接的信道与周边 3 个以上信号强度 > 50% 的邻居 AP 处于同一信道，存在严重的同频干扰。
+- **治理建议**：
+  - 优先连接 5GHz 或 6GHz 频段，避开信道拥堵的 2.4GHz 频段；
+  - 登录无线路由器管理后台，将无线信道由「自动」改为手动指定一个周边干扰较少的清洁信道（如 5GHz 高频信道或 DFS 信道）。
+
+---
+
+## 坑 13：满载与空载延迟巨幅劣化（Bufferbloat 缓冲区膨胀与队列积压）
+
+### 现象表现
+- 本机空闲时 ping 局域网网关只有 1ms、ping 公网 DNS 只有 10~15ms，表现极佳。
+- 但只要后台开启下载、上传大文件或局域网有其他设备进行高带宽占用，开网页甚至发送即时消息都会出现严重迟滞甚至超时。
+
+### 技术根因
+这就是经典的 **Bufferbloat（缓冲区膨胀）**。家庭路由器、光猫以及操作系统内部的网络驱动缓冲区为了防止丢包，往往被设计得过大。
+当链路吞吐被大流量填满时，数据包在过大的 FIFO 缓冲区中排成长队。交互型的小数据包（如 DNS 请求、TCP SYN/ACK 确认包、HTTP 请求头）必须在队列尾部等待前面所有的巨型数据包按顺序发送完成，导致往返时间（RTT）呈指数级上升（从 10ms 暴涨至 1000ms+），形成“带宽跑满但网页极卡”的典型现象。
+
+### 官方只读排查命令
+```powershell
+# 1. 对照测试：在空闲与并发传输时分别连续探测公网延迟（对比 RTT 膨胀幅度）
+ping 223.5.5.5 -n 10
+
+# 2. 审计 Windows TCP 全局拥塞控制提供程序与窗口自适应级别
+Get-NetTCPSetting | Select-Object SettingName, AutoTuningLevelEffective, CongestionProvider, ECNCapability
+```
+
+### 证据判定与处置
+- **证据**：在满载大流量传输时，Ping 网关或公网的延迟相比空载时膨胀超过 5~10 倍（甚至出现超时丢包）。
+- **治理建议**：
+  - 确保 Windows 原生 TCP 窗口自适应为开启状态（`AutoTuningLevelEffective = Normal`）；
+  - 建议在路由器上开启基于 fq_codel 或 CAKE 算法的智能队列管理（SQM / Smart Queue Management），主动限制大吞吐连接占用过深队列。
+
+---
+
+## 坑 14：Hosts 文件静态条目篡改或失效 IP 长期固化（Stale Hosts Mapping）
+
+### 现象表现
+- 访问绝大多数主流网站正常，但访问某一个或某几个特定网站时非常慢、持续转圈或直接打不开。
+- 使用其他电脑或手机在同一局域网下访问该网站却能够正常秒开。
+
+### 技术根因
+Windows 的域名解析优先级中，本地静态 Hosts 文件（位于 `%SystemRoot%\System32\drivers\etc\hosts`）的优先级高于 DNS 服务器查询。
+许多用户或历史安装过的网络加速、破解工具、开发配置脚本，曾向 Hosts 文件中硬编码写入了域名的静态 IP 地址。一旦目标服务商调整了 CDN 节点、机房迁移或该 IP 失效，系统仍然会强制连接 Hosts 中指定的失效 IP，并在经历漫长的 TCP SYN 重传超时（21 秒以上）后才会报错。
+
+### 官方只读排查命令
+```powershell
+# 1. 只读读取系统 Hosts 文件，过滤注释行与空行，列出所有生效的静态解析条目
+Get-Content -Path "$env:windir\System32\drivers\etc\hosts" -ErrorAction SilentlyContinue | Where-Object { 
+    $_ -match '\S' -and $_ -notmatch '^\s*#' 
+}
+```
+
+### 证据判定与处置
+- **证据**：Hosts 文件中存在异常慢的目标域名映射，且映射的 IP 经 `Test-NetConnection` 探测无法连通或延迟极高。
+- **治理建议**：
+  - 经用户确认后，以管理员身份编辑 Hosts 文件，删除或注释掉过期的静态域名解析条目。
+
 

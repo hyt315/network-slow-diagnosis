@@ -160,6 +160,21 @@ if ($wlanRaw -match "State\s*:\s*connected" -and $wlanRaw -match "SSID\s*:\s*(.+
     } else {
         Add-Metric -Layer "L1_PhysicalLink" -Item "Wi-Fi Interface" -Value $wlanVal -Baseline "Signal > 65%" -Status "OK"
     }
+    
+    # Wi-Fi Co-Channel Contention Check
+    if ($wlanRaw -match "Channel\s*:\s*(\d+)") {
+        $curChannel = [int]$matches[1]
+        $bssidRaw = (netsh wlan show networks mode=bssid 2>&1 | Out-String)
+        $coChannelMatches = [regex]::Matches($bssidRaw, "Channel\s*:\s*$curChannel\b")
+        $coChannelCount = $coChannelMatches.Count
+        $neighborCount = [math]::Max(0, $coChannelCount - 1)
+        if ($neighborCount -ge 3) {
+            Add-Metric -Layer "L1_PhysicalLink" -Item "Wi-Fi Co-Channel Contention" -Value "Ch $curChannel ($neighborCount neighbor APs)" -Baseline "< 3 neighbor APs" -Status "WARN" -Note "High co-channel congestion."
+            $report.Findings.Add("当前 Wi-Fi 所在信道 (信道 $curChannel) 存在 $neighborCount 个同频邻居 AP，可能因 CSMA/CA 空口竞争引发间歇性跳 ping")
+        } else {
+            Add-Metric -Layer "L1_PhysicalLink" -Item "Wi-Fi Co-Channel Contention" -Value "Ch $curChannel ($neighborCount neighbor APs)" -Baseline "< 3 neighbor APs" -Status "OK"
+        }
+    }
 } elseif ($activeAlias -notmatch "WLAN|Wi-Fi") {
     Add-Metric -Layer "L1_PhysicalLink" -Item "Active Interface" -Value "$activeAlias (Wired Ethernet)" -Baseline "Physical Link Up" -Status "OK"
 }
@@ -198,6 +213,18 @@ if ($pmSleeping) {
     $report.Recommendations.Add("在设备管理器网卡属性的「电源管理」中取消勾选「允许计算机关闭此设备以节约电源」")
 } else {
     Add-Metric -Layer "L1_PhysicalLink" -Item "NIC Power Management" -Value "Power saving disabled" -Baseline "Disabled" -Status "OK"
+}
+
+# NDIS Third-Party Filter Driver Check
+$nonMsFilters = Get-NetAdapterBinding -ErrorAction SilentlyContinue | Where-Object { 
+    $_.ComponentID -notmatch '^(ms_|vms_)' -and $_.Enabled -eq $true 
+}
+if ($nonMsFilters) {
+    $filterNames = ($nonMsFilters | Select-Object -ExpandProperty DisplayName -Unique) -join ", "
+    Add-Metric -Layer "L1_PhysicalLink" -Item "NDIS 3rd-Party Filters" -Value $filterNames -Baseline "Clean (MS Native)" -Status "WARN" -Note "Non-Microsoft filter drivers attached."
+    $report.Findings.Add("网卡绑定了第三方 NDIS 过滤驱动 ($filterNames)，旧版驱动可能引起静默丢包或微秒级排队迟滞")
+} else {
+    Add-Metric -Layer "L1_PhysicalLink" -Item "NDIS 3rd-Party Filters" -Value "Clean (Microsoft Native)" -Baseline "Clean" -Status "OK"
 }
 
 # --- L2: DNS & DoH ---
@@ -244,6 +271,18 @@ $dohConfigs = Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue
 $dohEnabled = ($dohConfigs -and $dohConfigs.Count -gt 0)
 Add-Metric -Layer "L2_DNS" -Item "System DoH (DNS-over-HTTPS)" -Value (if ($dohEnabled) { "Configured" } else { "Not active" }) -Baseline "Informational" -Status "OK"
 
+# DNS Suffix Search List & NRPT Rules
+$globalDns = Get-DnsClientGlobalSetting -ErrorAction SilentlyContinue
+$suffixes = @($globalDns.SuffixSearchList)
+if ($suffixes.Count -gt 1) {
+    $sufStr = $suffixes -join ", "
+    Add-Metric -Layer "L2_DNS" -Item "DNS Suffix Search List" -Value "$($suffixes.Count) suffixes ($sufStr)" -Baseline "0-1 Suffix" -Status "WARN" -Note "Multiple suffixes amplify lookup latency."
+    $report.Findings.Add("配置了多个全局 DNS 搜索后缀 ($sufStr)，公网域名解析可能被多次拼接查询放大延迟")
+} else {
+    $sufCount = if ($suffixes.Count -gt 0) { $suffixes[0] } else { "None" }
+    Add-Metric -Layer "L2_DNS" -Item "DNS Suffix Search List" -Value $sufCount -Baseline "0-1 Suffix" -Status "OK"
+}
+
 # --- L3: Transport & Dual Stack ---
 # TCP 443 Test
 $tcpSw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -277,6 +316,15 @@ if ($curlExe) {
         Add-Metric -Layer "L4_Application" -Item "Server TTFB" -Value "${ttfb}ms" -Baseline "< 300ms" -Status (if ($ttfb -gt 1000) { "WARN" } else { "OK" })
         Add-Metric -Layer "L4_Application" -Item "Total Page Timing" -Value "${tt}ms" -Baseline "< 1500ms" -Status "OK"
     }
+}
+
+# TIME_WAIT Sockets & Ephemeral Ports Backlog
+$timeWaitCount = (Get-NetTCPConnection -State TimeWait -ErrorAction SilentlyContinue).Count
+if ($timeWaitCount -gt 1000) {
+    Add-Metric -Layer "L3_Transport" -Item "TIME_WAIT Sockets" -Value "$timeWaitCount sockets" -Baseline "< 500 sockets" -Status "WARN" -Note "High TIME_WAIT socket backlog."
+    $report.Findings.Add("当前系统积压了 $timeWaitCount 个处于 TIME_WAIT 状态的套接字，可能导致临时端口紧张并偶发 10055 异常")
+} else {
+    Add-Metric -Layer "L3_Transport" -Item "TIME_WAIT Sockets" -Value "$timeWaitCount sockets" -Baseline "< 500 sockets" -Status "OK"
 }
 
 # --- L4: Zombie Proxy & Virtual Adapter Conflicts ---
@@ -315,6 +363,25 @@ if ($primaryRoute) {
     } else {
         Add-Metric -Layer "L4_Application" -Item "Default Route Target" -Value "$($topInterface.InterfaceAlias) (Metric $($primaryRoute.RouteMetric))" -Baseline "Physical Adapter" -Status "OK"
     }
+}
+
+# Hosts Static Mapping Check
+$hostsPath = "$env:windir\System32\drivers\etc\hosts"
+$hostsEntries = @()
+if (Test-Path $hostsPath) {
+    $hostsRaw = Get-Content -Path $hostsPath -ErrorAction SilentlyContinue | Where-Object { $_ -match '\S' -and $_ -notmatch '^\s*#' }
+    $hostsEntries = @($hostsRaw)
+}
+if ($hostsEntries.Count -gt 0) {
+    $targetInHosts = $hostsEntries | Where-Object { $_ -match [regex]::Escape($Domain) }
+    if ($targetInHosts) {
+        Add-Metric -Layer "L4_Application" -Item "Hosts Static Override" -Value "Pinned: $($targetInHosts[0].Trim())" -Baseline "No override" -Status "WARN" -Note "Target domain pinned in hosts file."
+        $report.Findings.Add("目标域名 $Domain 在系统 Hosts 文件中存在静态映射，可能会绕过 DNS 并连接到失效旧 IP")
+    } else {
+        Add-Metric -Layer "L4_Application" -Item "Hosts Static Entries" -Value "$($hostsEntries.Count) rules" -Baseline "Clean" -Status "OK"
+    }
+} else {
+    Add-Metric -Layer "L4_Application" -Item "Hosts Static Entries" -Value "Clean (Default)" -Baseline "Clean" -Status "OK"
 }
 
 # --- L5: Delivery Optimization & Bandwidth Hogs ---

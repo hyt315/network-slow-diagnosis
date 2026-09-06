@@ -4,6 +4,20 @@ All notable changes to `network-slow-diagnosis` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-09-06
+
+### Added
+- **第三方 NDIS 过滤驱动审计（NDIS Filter Drivers）**：新增对网卡绑定的非微软原生过滤驱动与协议组件（如旧版抓包驱动、老旧杀软网络过滤驱动、虚拟机桥接驱动）的只读扫描与风险提示，彻底定位物理协商千兆但吞吐被锁死在几十兆或内核排队丢包的隐蔽元凶。
+- **Wi-Fi 同频信道竞争与邻近 AP 拥塞审计**：新增信道拥堵与邻近同频 BSSID 扫描分析，当信道内存在 3 个以上高信号同频邻居 AP 时及时预警，解决 Wi-Fi 信号满格但频繁跳 ping 掉速问题。
+- **DNS 搜索后缀列表（SuffixSearchList）与 NRPT 规则排障**：新增对全局 DNS 搜索后缀及名称解析策略表（NRPT）的只读探测，解决加入过企业域或内网环境后公网域名因多轮后缀拼接超时导致解析耗时放大数倍的卡顿。
+- **临时端口耗尽与 TIME_WAIT 套接字积压检测**：新增动态临时端口配额与 `TIME_WAIT` 状态连接数快速统计，及时捕捉短连接爆发导致源端口耗尽并抛出 `10055 (WSAENOBUFS)` 异常的瞬间瘫痪状态。
+- **Hosts 文件静态条目篡改与失效 IP 映射审计**：新增对系统 Hosts 文件的只读扫描与当前域名匹配，精准排查特定域名被硬编码至失效、下线或异地 IP 导致的单网站打不开或持续超时。
+- **Bufferbloat（缓冲区膨胀）满载与空载延迟对比**：新增链路在并发大流量吞吐与空闲状态下的 RTT 膨胀对比排查，定位路由器与驱动深队列造成的交互小包堵塞。
+- **常见根因表与排障手册扩充**：`references/diagnostic-playbook.md` 常见根因表由 18 项扩充至 24 项，新增全套官方只读排查命令与安全恢复最小治理指南。
+- **现代网络避坑指南扩充**：`references/modern-network-pitfalls.md` 由 8 大陷阱全面扩展至 14 大现代 Windows 网络陷阱，补齐技术根因、官方命令与证据判定标准。
+- **自动化诊断扫描器增强 (`scripts/diagnose.ps1`)**：集成以上所有新增排查项，单次运行 5~10 秒内完整输出包含 NDIS 驱动、Wi-Fi 信道争用、DNS 后缀、TIME_WAIT、Hosts 条目等多层维度事实报告卡。
+- **回归测试套件升级**：`tests/test_skill.py` 新增对 NDIS 绑定、DNS 后缀、TIME_WAIT、Hosts 等新增排查能力的完整断言覆盖。
+
 ## [1.2.0] - 2026-09-06
 
 ### Added

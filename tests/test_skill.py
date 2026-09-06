@@ -88,7 +88,7 @@ if REFS_DIR.exists():
     orphans = actual - linked
     check(not orphans, f"orphan references (not linked in SKILL.md): {sorted(orphans)}")
 
-# 3b. Regression guards for diagnosis-coverage optimizations (v1.1.0 & v1.2.0)
+# 3b. Regression guards for diagnosis-coverage optimizations (v1.1.0 & v1.2.0 & v1.3.0)
 layer_checks = {
     "time_appconnect": "SKILL.md missing TLS handshake timing (time_appconnect)",
     "Get-NetAdapterStatistics": "SKILL.md missing NIC error/discard counters (Get-NetAdapterStatistics)",
@@ -104,6 +104,10 @@ layer_checks = {
     "ProxyEnable": "SKILL.md missing ProxyEnable zombie proxy residual check",
     "curl.exe": "SKILL.md missing robust Windows curl.exe invocation",
     "虚拟网卡": "SKILL.md missing virtual NIC conflict check",
+    "Get-NetAdapterBinding": "SKILL.md missing NDIS filter driver check (Get-NetAdapterBinding)",
+    "SuffixSearchList": "SKILL.md missing DNS suffix search list check (SuffixSearchList)",
+    "TimeWait": "SKILL.md missing TIME_WAIT socket backlog check (TimeWait)",
+    "hosts": "SKILL.md missing Hosts file static mapping check",
 }
 for token, msg in layer_checks.items():
     check(token in text, msg)
