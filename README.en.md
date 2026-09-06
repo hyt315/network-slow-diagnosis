@@ -33,12 +33,14 @@ Windows users frequently encounter frustrating, elusive network bottlenecks:
 
 | Diagnostic Layer | Scenarios Covered | Core Read-Only Cmdlets / Tools | Definitive Criteria |
 |---|---|---|---|
-| **Layer 1: Physical & Wireless** | Wi-Fi 7/6/5 signal, Band Steering roaming jitter, channel congestion, packet errors | `netsh wlan show interfaces`<br>`netsh wlan show networks mode=bssid`<br>`Get-NetAdapterStatistics` | Signal `<60%` or frequent re-associations across BSSIDs under same SSID; incrementing error counters |
+| **Automated Scanner** | End-to-end automated L0~L5 millisecond telemetry & diagnostic card | `powershell -File scripts/diagnose.ps1` | Full layered metrics, baseline comparisons and root-cause findings in 5~10s |
+| **Layer 1: Physical & Wireless** | Wi-Fi 7/6/5 signal, Band Steering roaming jitter, channel congestion, packet errors | `netsh wlan show interfaces`<br>`netsh wlan show networks mode=bssid`<br>`netstat -e` | Signal `<60%` or frequent re-associations across BSSIDs under same SSID; incrementing error counters |
 | **Layer 2: Hardware Power Management** | Modern Standby (S0ix) D3 throttling, cold-start latency, EEE energy saving | `Get-NetAdapterPowerManagement`<br>`Get-NetAdapterAdvancedProperty` | `AllowComputerToTurnOffDevice = Enabled`, hardware clock recovery latency |
 | **Layer 3: Domain Resolution (DNS/DoH)** | Windows 11 native DoH handshake timeout fallback, cold cache misses, router DNS flakiness | `Get-DnsClientDohServerAddress`<br>`netsh dns show encryption`<br>`Resolve-DnsName -Server` | System configured unreachable DoH template causing TLS timeout before falling back to UDP 53; `nl` (DNS lookup time) near total time |
 | **Layer 4: Transport & Dual Stack** | IPv6 fallback stall (Happy Eyeballs 21s timeout), PPPoE MTU 1492 black hole, TCP window autotuning | `netsh interface ipv6 show prefixpolicies`<br>`netsh interface ipv6 show subinterfaces`<br>`Test-NetConnection -Port 443` | IPv4 connects in `<30ms` while IPv6 fails/drops packets; `AutoTuningLevelEffective = Disabled` |
-| **Layer 5: System Background Hogs** | Windows Delivery Optimization (DoSvc) P2P upstream saturation, Bufferbloat | `Get-DeliveryOptimizationStatus -PeerInfo`<br>`Get-DeliveryOptimizationPerfSnap`<br>`Get-NetTCPConnection` | High `TotalBytesUploadedToInternet`, upstream bandwidth saturated delaying downstream ACK packets |
-| **Layer 6: Application & TLS Handshake** | TLS certificate chain negotiation delay, HTTP/3 QUIC fallback, remote server TTFB | `curl -w "ct=%{time_connect} ac=%{time_appconnect}..."`<br>`chrome://net-internals/#quic` | High `ac - ct` (TLS handshake bottleneck); local health verified but high `ttfb` (remote bottleneck) |
+| **Layer 5: Zombie Proxy & Virtual NICs** | Residual dead proxy settings after client exit, virtual adapter (VMware/WSL) metric conflicts | `Get-ItemProperty ... "Internet Settings"`<br>`Get-NetRoute -DestinationPrefix "0.0.0.0/0"` | `ProxyEnable = 1` with dead local port; default route hijacked by virtual NIC |
+| **Layer 6: System Background Hogs** | Windows Delivery Optimization (DoSvc) P2P upstream saturation, Bufferbloat | `Get-DeliveryOptimizationStatus -PeerInfo`<br>`Get-DeliveryOptimizationPerfSnap`<br>`Get-NetTCPConnection` | High `TotalBytesUploadedToInternet`, upstream bandwidth saturated delaying downstream ACK packets |
+| **Layer 7: Application & TLS Handshake** | TLS certificate chain negotiation delay, HTTP/3 QUIC fallback, remote server TTFB | `curl.exe -w "ct=%{time_connect} ac=%{time_appconnect}..."`<br>`chrome://net-internals/#quic` | High `ac - ct` (TLS handshake bottleneck); local health verified but high `ttfb` (remote bottleneck) |
 
 ---
 
@@ -126,7 +128,8 @@ network-slow-diagnosis/
 ├── manifest.json                     # Skill manifest
 ├── agents/                           # Agent platform metadata
 ├── scripts/
-│   └── selftest.py                   # Skill regression test runner
+│   ├── diagnose.ps1                  # One-click automated read-only network scanner (PowerShell)
+│   └── selftest.py                   # Skill regression test runner (Python)
 ├── tests/
 │   └── test_skill.py                 # Structure and assertion test suite
 └── references/                       # In-depth technical guides

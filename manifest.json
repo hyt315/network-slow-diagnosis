@@ -1,7 +1,7 @@
 {
   "name": "network-slow-diagnosis",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "owner": "hyt315",
-  "updated_at": "2026-09-02",
-  "description": "Layered read-only Windows network slowness & intermittent lag diagnosis (WiFi 7, Modern Standby, DoH, IPv6, Bufferbloat, DNS)"
+  "updated_at": "2026-09-06",
+  "description": "Layered read-only Windows network slowness & intermittent lag diagnosis (One-click diagnose.ps1, WiFi 7, Modern Standby, DoH, IPv6, Zombie Proxy, Virtual NIC, Bufferbloat, DNS)"
 }

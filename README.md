@@ -33,12 +33,14 @@
 
 | 诊断层级 | 覆盖场景 | 核心只读命令 / 工具 | 确凿判定依据 |
 |---|---|---|---|
-| **第 1 层：物理与无线链路** | Wi-Fi 7/6/5 信号强度、双频合一漫游颠簸、信道拥塞、网线丢包错包 | `netsh wlan show interfaces`<br>`netsh wlan show networks mode=bssid`<br>`Get-NetAdapterStatistics` | 信号 `<60%` 或相同 SSID 下多 BSSID 频繁重关联；错包/丢包计数持续递增 |
+| **一键诊断扫描器** | L0~L5 全层自动化毫秒级测绘，输出标准事实卡片 | `powershell -File scripts/diagnose.ps1` | 5~10 秒全自动出具各层指标、基线比对与确凿归因 |
+| **第 1 层：物理与无线链路** | Wi-Fi 7/6/5 信号强度、双频合一漫游颠簸、信道拥塞、网卡硬件错包丢包 | `netsh wlan show interfaces`<br>`netsh wlan show networks mode=bssid`<br>`netstat -e` | 信号 `<60%` 或相同 SSID 下多 BSSID 频繁重关联；错包/丢包计数持续递增 |
 | **第 2 层：硬件节能调度** | Modern Standby (S0ix) D3 挂起、静置后首开网页迟滞、EEE 节能 | `Get-NetAdapterPowerManagement`<br>`Get-NetAdapterAdvancedProperty` | `AllowComputerToTurnOffDevice = Enabled`，硬件时钟唤醒延迟 |
 | **第 3 层：DNS 与 DoH 解析** | Win11 原生 DoH 握手超时回退、冷查询慢、路由器转发器抽风 | `Get-DnsClientDohServerAddress`<br>`netsh dns show encryption`<br>`Resolve-DnsName -Server` | 系统启用了不可达 DoH 模板导致 TLS 握手超时后才降级 UDP 53；`nl`（DNS 耗时）接近总耗时 |
 | **第 4 层：传输层与双栈** | IPv6 假通 (Happy Eyeballs 21s 超时)、PPPoE MTU 1492 黑洞、TCP 窗口自适应 | `netsh interface ipv6 show prefixpolicies`<br>`netsh interface ipv6 show subinterfaces`<br>`Test-NetConnection -Port 443` | IPv4 秒连 (<30ms) 而 IPv6 握手失败/丢包；`AutoTuningLevelEffective = Disabled` |
-| **第 5 层：后台占用与膨胀** | Windows 传递优化 (DoSvc) P2P 上行吃满、Bufferbloat 缓冲区膨胀 | `Get-DeliveryOptimizationStatus -PeerInfo`<br>`Get-DeliveryOptimizationPerfSnap`<br>`Get-NetTCPConnection` | `TotalBytesUploadedToInternet` 巨大，上行占满导致下行 ACK 队列排队延迟雪崩 |
-| **第 6 层：应用与 TLS 握手** | TLS 证书链协商延迟、HTTP/3 QUIC 握手回退、远端服务器 TTFB | `curl -w "ct=%{time_connect} ac=%{time_appconnect}..."`<br>`chrome://net-internals/#quic` | `ac - ct` 极大（TLS 握手受阻）；本地健康但 `ttfb` 极大（远端服务器响应慢） |
+| **第 5 层：死挂代理与虚拟网卡** | 注册表死挂代理残余检测、虚拟网卡 (VMware/WSL) 优先级冲突 | `Get-ItemProperty ... "Internet Settings"`<br>`Get-NetRoute -DestinationPrefix "0.0.0.0/0"` | 注册表 `ProxyEnable=1` 但对应端口无响应；默认路由指向虚拟网卡导致流量绕路 |
+| **第 6 层：后台占用与膨胀** | Windows 传递优化 (DoSvc) P2P 上行吃满、Bufferbloat 缓冲区膨胀 | `Get-DeliveryOptimizationStatus -PeerInfo`<br>`Get-DeliveryOptimizationPerfSnap`<br>`Get-NetTCPConnection` | `TotalBytesUploadedToInternet` 巨大，上行占满导致下行 ACK 队列排队延迟雪崩 |
+| **第 7 层：应用与 TLS 握手** | TLS 证书链协商延迟、HTTP/3 QUIC 握手回退、远端服务器 TTFB | `curl.exe -w "ct=%{time_connect} ac=%{time_appconnect}..."`<br>`chrome://net-internals/#quic` | `ac - ct` 极大（TLS 握手受阻）；本地健康但 `ttfb` 极大（远端服务器响应慢） |
 
 ---
 
@@ -126,7 +128,8 @@ network-slow-diagnosis/
 ├── manifest.json                     # 技能元数据清单
 ├── agents/                           # 多 Agent 平台元数据
 ├── scripts/
-│   └── selftest.py                   # 技能回归自测脚本
+│   ├── diagnose.ps1                  # 一键自动化只读网络诊断工具 (PowerShell)
+│   └── selftest.py                   # 技能回归自测脚本 (Python)
 ├── tests/
 │   └── test_skill.py                 # 规范性与断言测试套件
 └── references/                       # 深度参考文档

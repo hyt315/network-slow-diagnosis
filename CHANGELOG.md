@@ -4,6 +4,16 @@ All notable changes to `network-slow-diagnosis` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-09-06
+
+### Added
+- **一键自动化只读诊断扫描器 (`scripts/diagnose.ps1`)**：纯原生、零第三方依赖的 PowerShell 诊断工具，5~10 秒内全自动对 L0~L5 进行立体测绘，支持终端彩色事实卡片与机读 `-Json` 输出。
+- **死挂系统代理残余检测（Zombie Proxy Residuals）**：只读审计注册表 `Internet Settings` 中 `ProxyEnable=1` 死端口残余，解决第三方网络软件退出后浏览器全网请求超时痛点。
+- **多网卡与虚拟网卡（VMware/WSL/Hyper-V）Metric 冲突与 SMHNR 延迟审计**：排查默认路由被虚拟网卡抢占导致吞吐腰斩，以及多网卡并发 DNS 探测超时问题。
+- **Windows CLI 健壮性修复**：全面修复 Windows PowerShell 下 `curl` 别名与 `/dev/null` 语法陷阱，规范为 `curl.exe -o NUL` 与 `--noproxy "*"`。
+- **标准化交付模版**：在 `SKILL.md` 中规范了统一的「Windows 网络分层诊断事实卡」输出格式。
+- **语法与回归自检增强**：`scripts/selftest.py` 增加对 PowerShell 脚本的 AST 语法树解析检验与 v1.2.0 新指标回归锁。
+
 ## [1.1.0] - 2026-09-02
 
 ### Added

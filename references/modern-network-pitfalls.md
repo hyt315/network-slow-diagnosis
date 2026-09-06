@@ -13,6 +13,8 @@
 4. [坑 4：IPv6 假通与 Path MTU 黑洞（Happy Eyeballs 21 秒重传超时）](#坑-4ipv6-假通与-path-mtu-黑洞happy-eyeballs-21-秒重传超时)
 5. [坑 5：Windows 传递优化（DoSvc）P2P 上行占满与 Bufferbloat 缓冲区膨胀](#坑-5windows-传递优化dosvc-p2p-上行占满与-bufferbloat-缓冲区膨胀)
 6. [坑 6：TCP 窗口自适应关闭与网卡高级节能属性（EEE / RSS / LSO）](#坑-6tcp-窗口自适应关闭与网卡高级节能属性eee--rss--lso)
+7. [坑 7：第三方网络工具异常退出导致注册表死挂系统代理（Zombie Proxy Residual）](#坑-7第三方网络工具异常退出导致注册表死挂系统代理zombie-proxy-residual)
+8. [坑 8：多网卡与虚拟网卡（VMware/WSL/Hyper-V）默认路由冲突与 SMHNR 延迟](#坑-8多网卡与虚拟网卡vmwarewslhyper-v默认路由冲突与-smhnr-延迟)
 
 ---
 
@@ -192,3 +194,57 @@ Get-NetAdapterChecksumOffload
 - **证据**：`AutoTuningLevelEffective = 'Disabled'`。
 - **治理建议**：
   - 恢复系统官方默认自适应调优：`netsh int tcp set global autotuninglevel=normal`。
+
+---
+
+## 坑 7：第三方网络工具异常退出导致注册表死挂系统代理（Zombie Proxy Residual）
+
+### 现象表现
+- 突然之间浏览器打开任何国内/常规网页都转圈数十秒，最终报错 `ERR_PROXY_CONNECTION_FAILED` 或 `ERR_TIMED_OUT`。
+- 本机 Ping 局域网网关与公网 IP（如 `223.5.5.5`）全部秒通，DNS 解析也正常，唯独浏览器与 HTTP/HTTPS 工具彻底瘫痪。
+
+### 技术根因
+某些网络软件或公司内网代理在崩溃、强制关机或未正常点击“断开”时退出，未能触发清理逻辑，导致 Windows 注册表中的 `ProxyEnable=1` 依然处于开启状态，其指向的本地端口（如 `127.0.0.1:7890`）已无任何监听进程。操作系统层面的所有 Web 流量都会优先尝试连接该本地死端口，在经历多次 TCP SYN 重传超时（约 21~45 秒）后才宣告失败。
+
+### 官方只读排查命令
+```powershell
+# 1. 审计注册表 Internet Settings 代理开关与服务器地址
+Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" | Select-Object ProxyEnable, ProxyServer, AutoConfigURL
+
+# 2. 验证目标死代理端口是否存活（以 127.0.0.1:7890 为例）
+Test-NetConnection -ComputerName 127.0.0.1 -Port 7890 -WarningAction SilentlyContinue | Select-Object TcpTestSucceeded
+```
+
+### 证据判定与处置
+- **证据**：`ProxyEnable = 1`，但 `Test-NetConnection` 探测对应本地端口返回 `TcpTestSucceeded = False`。
+- **治理建议**：
+  - **重要原则**：本技能绝不涉及任何代理配置教学，仅协助用户恢复系统干净直连状态；
+  - 打开 Windows「设置」->「网络和 Internet」->「代理」，将「使用代理服务器」开关切换为“关”。
+
+---
+
+## 坑 8：多网卡与虚拟网卡（VMware/WSL/Hyper-V）默认路由冲突与 SMHNR 延迟
+
+### 现象表现
+- 电脑插着千兆网线，但局域网拷贝或打开网页时感觉只有百兆甚至几十兆，或开网页存在间歇性 2 秒迟顿。
+- 本机安装了虚拟机软件（VMware Workstation / VirtualBox）或开启了 WSL2 / Hyper-V。
+
+### 技术根因
+1. **默认路由 Metric 竞争**：Windows 依据接口跃点数（InterfaceMetric）与路由跃点数（RouteMetric）决定默认出口。某些虚拟网卡安装时配置了较小的 Metric，导致系统默认路由 `0.0.0.0/0` 的第一跳被误指向虚拟交换机，导致物理流量穿透或路由回环。
+2. **多宿主智能名称解析（Smart Multi-Homed Name Resolution - SMHNR）**：Windows 10/11 在拥有多个网络适配器时，会同时向所有网卡的 DNS 服务器并发发送查询请求，并接受最先返回的结果。如果虚拟网卡绑定的私有 DNS（如 192.168.x.2）不可达，系统可能在等待超时窗口期产生不可预期的解析顿挫。
+
+### 官方只读排查命令
+```powershell
+# 1. 检查默认路由的出口网卡与跃点数优先级（升序排列）
+Get-NetRoute -DestinationPrefix "0.0.0.0/0" | Sort-Object RouteMetric | Select-Object NextHop, InterfaceIndex, RouteMetric
+
+# 2. 检查所有网络适配器的别名与接口跃点数
+Get-NetIPInterface -AddressFamily IPv4 | Sort-Object InterfaceMetric | Select-Object InterfaceAlias, InterfaceIndex, InterfaceMetric, ConnectionState
+```
+
+### 证据判定与处置
+- **证据**：`0.0.0.0/0` 跃点数最小（优先级最高）的出口网卡为 `vEthernet`、`VMnet8` 等虚拟适配器，而非正在使用的 `以太网` 或 `WLAN`。
+- **治理建议**：
+  - 手动提高虚拟网卡的接口跃点数，确保物理网卡拥有更低的 Metric；
+  - 禁用不使用的虚拟网卡或在控制面板网络连接中调整适配器绑定顺序。
+

@@ -88,7 +88,7 @@ if REFS_DIR.exists():
     orphans = actual - linked
     check(not orphans, f"orphan references (not linked in SKILL.md): {sorted(orphans)}")
 
-# 3b. Regression guards for diagnosis-coverage optimizations (locked after 2026-08-21 web review & v1.1.0 update)
+# 3b. Regression guards for diagnosis-coverage optimizations (v1.1.0 & v1.2.0)
 layer_checks = {
     "time_appconnect": "SKILL.md missing TLS handshake timing (time_appconnect)",
     "Get-NetAdapterStatistics": "SKILL.md missing NIC error/discard counters (Get-NetAdapterStatistics)",
@@ -100,9 +100,17 @@ layer_checks = {
     "QUIC": "SKILL.md missing HTTP/3 QUIC note",
     "传递优化": "SKILL.md missing Windows 11 background-bandwidth pit",
     "modern-network-pitfalls.md": "SKILL.md missing modern-network-pitfalls reference link",
+    "diagnose.ps1": "SKILL.md missing scripts/diagnose.ps1 automated scanner reference",
+    "ProxyEnable": "SKILL.md missing ProxyEnable zombie proxy residual check",
+    "curl.exe": "SKILL.md missing robust Windows curl.exe invocation",
+    "虚拟网卡": "SKILL.md missing virtual NIC conflict check",
 }
 for token, msg in layer_checks.items():
     check(token in text, msg)
+
+# 3c. Script existence checks
+check((ROOT / "scripts" / "diagnose.ps1").is_file(), "scripts/diagnose.ps1 not found")
+check((ROOT / "scripts" / "selftest.py").is_file(), "scripts/selftest.py not found")
 
 # 4. Hygiene: no absolute personal paths in any file
 for p in ROOT.rglob("*"):
